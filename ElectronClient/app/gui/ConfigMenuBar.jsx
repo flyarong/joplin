@@ -10,7 +10,7 @@ function ConfigMenuBarButton(props) {
 
 	return (
 		<button style={style.button} onClick={props.onClick}>
-			<i style={iconStyle} className={'fa ' + props.iconName}></i>
+			<i style={iconStyle} className={`fa ${props.iconName}`}></i>
 			<span style={labelStyle}>{props.label}</span>
 		</button>
 	);
@@ -28,7 +28,7 @@ function ConfigMenuBar(props) {
 			key={section.name}
 			iconName={Setting.sectionNameToIcon(section.name)}
 			label={Setting.sectionNameToLabel(section.name)}
-			onClick={() => { props.onSelectionChange({ section: section });}}
+			onClick={() => { props.onSelectionChange({ section: section }); }}
 		/>);
 	}
 
