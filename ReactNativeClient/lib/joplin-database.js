@@ -2,6 +2,7 @@ const { promiseChain } = require('lib/promise-utils.js');
 const { Database } = require('lib/database.js');
 const { sprintf } = require('sprintf-js');
 const Resource = require('lib/models/Resource');
+const { shim } = require('lib/shim.js');
 
 const structureSql = `
 CREATE TABLE folders (
@@ -123,6 +124,7 @@ class JoplinDatabase extends Database {
 		this.initialized_ = false;
 		this.tableFields_ = null;
 		this.version_ = null;
+		this.tableFieldNames_ = {};
 	}
 
 	initialized() {
@@ -135,11 +137,15 @@ class JoplinDatabase extends Database {
 	}
 
 	tableFieldNames(tableName) {
-		let tf = this.tableFields(tableName);
-		let output = [];
+		if (this.tableFieldNames_[tableName]) return this.tableFieldNames_[tableName].slice();
+
+		const tf = this.tableFields(tableName);
+		const output = [];
 		for (let i = 0; i < tf.length; i++) {
 			output.push(tf[i].name);
 		}
+		this.tableFieldNames_[tableName] = output;
+
 		return output;
 	}
 
@@ -245,16 +251,16 @@ class JoplinDatabase extends Database {
 		return d && d[fieldName] ? d[fieldName] : '';
 	}
 
-	refreshTableFields() {
+	refreshTableFields(newVersion) {
 		this.logger().info('Initializing tables...');
-		let queries = [];
+		const queries = [];
 		queries.push(this.wrapQuery('DELETE FROM table_fields'));
 
 		return this.selectAll('SELECT name FROM sqlite_master WHERE type="table"')
 			.then(tableRows => {
-				let chain = [];
+				const chain = [];
 				for (let i = 0; i < tableRows.length; i++) {
-					let tableName = tableRows[i].name;
+					const tableName = tableRows[i].name;
 					if (tableName == 'android_metadata') continue;
 					if (tableName == 'table_fields') continue;
 					if (tableName == 'sqlite_sequence') continue;
@@ -262,13 +268,13 @@ class JoplinDatabase extends Database {
 					chain.push(() => {
 						return this.selectAll(`PRAGMA table_info("${tableName}")`).then(pragmas => {
 							for (let i = 0; i < pragmas.length; i++) {
-								let item = pragmas[i];
+								const item = pragmas[i];
 								// In SQLite, if the default value is a string it has double quotes around it, so remove them here
 								let defaultValue = item.dflt_value;
 								if (typeof defaultValue == 'string' && defaultValue.length >= 2 && defaultValue[0] == '"' && defaultValue[defaultValue.length - 1] == '"') {
 									defaultValue = defaultValue.substr(1, defaultValue.length - 2);
 								}
-								let q = Database.insertQuery('table_fields', {
+								const q = Database.insertQuery('table_fields', {
 									table_name: tableName,
 									field_name: item.name,
 									field_type: Database.enumId('fieldType', item.type),
@@ -283,8 +289,14 @@ class JoplinDatabase extends Database {
 				return promiseChain(chain);
 			})
 			.then(() => {
+				queries.push({ sql: 'UPDATE version SET table_fields_version = ?', params: [newVersion] });
 				return this.transactionExecBatch(queries);
 			});
+	}
+
+	addMigrationFile(num) {
+		const timestamp = Date.now();
+		return { sql: 'INSERT INTO migrations (number, created_time, updated_time) VALUES (?, ?, ?)', params: [num, timestamp, timestamp] };
 	}
 
 	async upgradeDatabase(fromVersion) {
@@ -302,13 +314,19 @@ class JoplinDatabase extends Database {
 		// must be set in the synchronizer too.
 
 		// Note: v16 and v17 don't do anything. They were used to debug an issue.
-		const existingDatabaseVersions = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25];
+		const existingDatabaseVersions = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29];
 
 		let currentVersionIndex = existingDatabaseVersions.indexOf(fromVersion);
 
 		// currentVersionIndex < 0 if for the case where an old version of Joplin used with a newer
 		// version of the database, so that migration is not run in this case.
-		if (currentVersionIndex < 0) throw new Error('Unknown profile version. Most likely this is an old version of Joplin, while the profile was created by a newer version. Please upgrade Joplin at https://joplinapp.org and try again.');
+		if (currentVersionIndex < 0) {
+			throw new Error(
+				'Unknown profile version. Most likely this is an old version of Joplin, while the profile was created by a newer version. Please upgrade Joplin at https://joplinapp.org and try again.\n'
+				+ `Joplin version: ${shim.appVersion()}\n`
+				+ `Profile version: ${fromVersion}\n`
+				+ `Expected version: ${existingDatabaseVersions[existingDatabaseVersions.length - 1]}`);
+		}
 
 		if (currentVersionIndex == existingDatabaseVersions.length - 1) return fromVersion;
 
@@ -596,9 +614,8 @@ class JoplinDatabase extends Database {
 				`;
 				queries.push(this.sqlStringToLines(newTableSql)[0]);
 
-				const timestamp = Date.now();
 				queries.push('ALTER TABLE resources ADD COLUMN `size` INT NOT NULL DEFAULT -1');
-				queries.push({ sql: 'INSERT INTO migrations (number, created_time, updated_time) VALUES (20, ?, ?)', params: [timestamp, timestamp] });
+				queries.push(this.addMigrationFile(20));
 			}
 
 			if (targetVersion == 21) {
@@ -647,6 +664,26 @@ class JoplinDatabase extends Database {
 							LEFT JOIN notes on notes.id = nt.note_id 
 						WHERE notes.id IS NOT NULL 
 						GROUP BY tags.id`);
+			}
+
+			if (targetVersion == 26) {
+				const tableNames = ['notes', 'folders', 'tags', 'note_tags', 'resources'];
+				for (let i = 0; i < tableNames.length; i++) {
+					const n = tableNames[i];
+					queries.push(`ALTER TABLE ${n} ADD COLUMN is_shared INT NOT NULL DEFAULT 0`);
+				}
+			}
+
+			if (targetVersion == 27) {
+				queries.push(this.addMigrationFile(27));
+			}
+
+			if (targetVersion == 28) {
+				queries.push('CREATE INDEX resources_size ON resources(size)');
+			}
+
+			if (targetVersion == 29) {
+				queries.push('ALTER TABLE version ADD COLUMN table_fields_version INT NOT NULL DEFAULT 0');
 			}
 
 			queries.push({ sql: 'UPDATE version SET version = ?', params: [targetVersion] });
@@ -702,19 +739,20 @@ class JoplinDatabase extends Database {
 		}
 
 		const version = !versionRow ? 0 : versionRow.version;
+		const tableFieldsVersion = !versionRow ? 0 : versionRow.table_fields_version;
 		this.version_ = version;
 		this.logger().info('Current database version', version);
 
 		const newVersion = await this.upgradeDatabase(version);
 		this.version_ = newVersion;
-		if (newVersion !== version) await this.refreshTableFields();
+		if (newVersion !== tableFieldsVersion) await this.refreshTableFields(newVersion);
 
 		this.tableFields_ = {};
 
-		let rows = await this.selectAll('SELECT * FROM table_fields');
+		const rows = await this.selectAll('SELECT * FROM table_fields');
 
 		for (let i = 0; i < rows.length; i++) {
-			let row = rows[i];
+			const row = rows[i];
 			if (!this.tableFields_[row.table_name]) this.tableFields_[row.table_name] = [];
 			this.tableFields_[row.table_name].push({
 				name: row.field_name,

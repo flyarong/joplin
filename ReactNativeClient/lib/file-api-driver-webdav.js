@@ -58,7 +58,17 @@ class FileApiDriverWebDav {
 			}
 		}
 
-		const lastModifiedString = this.api().resourcePropByName(resource, 'string', 'd:getlastmodified');
+		let lastModifiedString = null;
+
+		try {
+			lastModifiedString = this.api().resourcePropByName(resource, 'string', 'd:getlastmodified');
+		} catch (error) {
+			if (error.code === 'stringNotFound') {
+				// OK - the logic to handle this is below
+			} else {
+				throw error;
+			}
+		}
 
 		// Note: Not all WebDAV servers return a getlastmodified date (eg. Seafile, which doesn't return the
 		// property for folders) so we can only throw an error if it's a file.
@@ -105,7 +115,7 @@ class FileApiDriverWebDav {
 	statsFromResources_(resources) {
 		const relativeBaseUrl = this.api().relativeBaseUrl();
 		const baseUrl = this.api().baseUrl();
-		let output = [];
+		const output = [];
 		for (let i = 0; i < resources.length; i++) {
 			const resource = resources[i];
 			const href = this.api().stringFromJson(resource, ['d:href', 0]);

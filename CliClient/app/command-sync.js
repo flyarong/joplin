@@ -1,7 +1,7 @@
 const { BaseCommand } = require('./base-command.js');
 const { app } = require('./app.js');
 const { _ } = require('lib/locale.js');
-const { OneDriveApiNodeUtils } = require('./onedrive-api-node-utils.js');
+const { OneDriveApiNodeUtils } = require('lib/onedrive-api-node-utils.js');
 const Setting = require('lib/models/Setting.js');
 const ResourceFetcher = require('lib/services/ResourceFetcher');
 const { Synchronizer } = require('lib/synchronizer.js');
@@ -161,9 +161,9 @@ class Command extends BaseCommand {
 
 			const sync = await syncTarget.synchronizer();
 
-			let options = {
+			const options = {
 				onProgress: report => {
-					let lines = Synchronizer.reportToLines(report);
+					const lines = Synchronizer.reportToLines(report);
 					if (lines.length) cliUtils.redraw(lines.join(' '));
 				},
 				onMessage: msg => {
@@ -185,7 +185,7 @@ class Command extends BaseCommand {
 			options.context = context;
 
 			try {
-				let newContext = await sync.start(options);
+				const newContext = await sync.start(options);
 				Setting.setValue(contextKey, JSON.stringify(newContext));
 			} catch (error) {
 				if (error.code == 'alreadyStarted') {

@@ -50,6 +50,7 @@ before_install:
       echo "deb https://dl.yarnpkg.com/debian/ stable main" | sudo tee /etc/apt/sources.list.d/yarn.list
       sudo apt-get update || true
       sudo apt-get install -y yarn
+      sudo apt-get install -y gettext
     fi
 
 script:
@@ -65,8 +66,7 @@ script:
     # and that would break the desktop release.
     if [ "$TRAVIS_PULL_REQUEST" != "false" ]; then
       cd CliClient
-      npm install
-      ./run_test.sh
+      npm run test
       testResult=$?
       if [ $testResult -ne 0 ]; then
         exit $testResult
@@ -84,6 +84,19 @@ script:
       fi
     fi
 
+    # Validate translations - this is needed as some users manually
+    # edit .po files (and often make mistakes) instead of using a proper
+    # tool like poedit. Doing it for Linux only is sufficient.
+    if [ "$TRAVIS_PULL_REQUEST" != "false" ]; then
+      if [ "$TRAVIS_OS_NAME" != "osx" ]; then
+        node Tools/validate-translation.js
+        testResult=$?
+        if [ $testResult -ne 0 ]; then
+          exit $testResult
+        fi
+      fi
+    fi
+
     # Find out if we should run the build or not. Electron-builder gets stuck when
     # builing PRs so we disable it in this case. The Linux build should provide
     # enough info if the app builds or not.
@@ -95,6 +108,5 @@ script:
     fi
 
     # Prepare the Electron app and build it
-    cd ElectronClient/app
-    rsync -aP --delete ../../ReactNativeClient/lib/ lib/
-    npm install && USE_HARD_LINKS=false yarn dist
+    cd ElectronClient
+    USE_HARD_LINKS=false yarn dist

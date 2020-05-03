@@ -93,12 +93,22 @@ https://github.com/laurent22/joplin/blob/master/{{{sourceMarkdownFile}}}
 	#toc {
 		padding-bottom: 1em;
 	}
+	.title {
+		display: flex;
+		align-items: center;
+	}
 	.title-icon {
-		height: 2em;
+		display: flex;
+		height: 1em;
+	}
+	.title-text {
+		display: flex;
+		font-weight: normal;
+		margin-bottom: .2em;
+		margin-left: .5em;
 	}
 	.sub-title {
-		font-weight: bold;
-		font-size: 1.5em;
+		font-weight: normal;
 	}
 	.container {
 		background-color: white;
@@ -154,6 +164,9 @@ https://github.com/laurent22/joplin/blob/master/{{{sourceMarkdownFile}}}
 	}
 	.header a h1 {
 		color: white;
+	}
+	.header a:hover {
+		text-decoration: none;
 	}
 	.content {
 		padding-left: 2em;
@@ -267,8 +280,8 @@ https://github.com/laurent22/joplin/blob/master/{{{sourceMarkdownFile}}}
 
 <div class="header">
 	<a class="forkme" href="https://github.com/laurent22/joplin"><img src="{{{imageBaseUrl}}}/ForkMe.png"/></a>
-	<a href="https://joplinapp.org"><h1 id="joplin"><img class="title-icon" src="{{{imageBaseUrl}}}/Icon512.png">oplin</h1></a>
-	<p class="sub-title">An open source note taking and to-do application with synchronisation capabilities.</p>
+	<a href="https://joplinapp.org"><h1 class="title"><img class="title-icon" src="{{{imageBaseUrl}}}/Icon512.png"><span class="title-text">Joplin</span></h1></a>
+	<p class="sub-title">An open source note taking and to-do application with synchronisation capabilities</p>
 </div>
 
 <div class="nav-wrapper">
@@ -277,7 +290,7 @@ https://github.com/laurent22/joplin/blob/master/{{{sourceMarkdownFile}}}
 			<li class="{{selectedHome}}"><a href="{{baseUrl}}/" title="Home"><i class="fa fa-home"></i></a></li>
 			<li><a href="https://discourse.joplinapp.org" title="Forum">Forum</a></li>
 			<li><a class="help" href="#" title="Menu">Menu</a></li>
-			<li><a class="gsoc" href="https://joplinapp.org/gsoc/" title="Menu">Google Summer of Code 2020</a></li>
+			<li><a class="gsod" href="https://joplinapp.org/gsod2020/" title="Google Season of Docs 2020">GSoD 2020</a></li>
 		</ul>
 		<div class="nav-right">
 			<!--
@@ -293,13 +306,15 @@ https://github.com/laurent22/joplin/blob/master/{{{sourceMarkdownFile}}}
 	{{{tocHtml}}}
 `;
 
-const footerHtml = `
+const footerHtmlTemplate = `
 <div class="footer">
-Copyright (c) 2016-2019 Laurent Cozic
+Copyright (c) 2016-YYYY Laurent Cozic
 </div>
 </body>
 </html>
 `;
+
+const footerHtml = footerHtmlTemplate.replace('YYYY', new Date().getFullYear());
 
 // const screenshotHtml = `
 // <table class="screenshots">
@@ -490,7 +505,9 @@ function tocMd() {
 }
 
 function replaceGitHubByJoplinAppLinks(md) {
-	return md.replace(/https:\/\/github.com\/laurent22\/joplin\/blob\/master\/readme\/(.*)\.md(#[^\s)]+|)/g, 'https://joplinapp.org/$1/$2');
+	let output = md.replace(/https:\/\/github.com\/laurent22\/joplin\/blob\/master\/readme\/(.*)\/index\.md(#[^\s)]+|)/g, 'https://joplinapp.org/$1');
+	output = output.replace(/https:\/\/github.com\/laurent22\/joplin\/blob\/master\/readme\/(.*)\.md(#[^\s)]+|)/g, 'https://joplinapp.org/$1/$2');
+	return output;
 }
 
 function tocHtml() {
@@ -526,6 +543,10 @@ function renderMdToHtml(md, targetPath, templateParams) {
 
 	templateParams.pageTitle = title.join(' | ');
 	const html = markdownToHtml(md, templateParams);
+
+	const folderPath = dirname(targetPath);
+	fs.mkdirpSync(folderPath);
+
 	fs.writeFileSync(targetPath, html);
 }
 
@@ -548,31 +569,31 @@ function makeHomePageMd() {
 async function main() {
 	tocMd();
 
-	renderMdToHtml(makeHomePageMd(), `${rootDir}/docs/index.html`, {});
+	renderMdToHtml(makeHomePageMd(), `${rootDir}/docs/index.html`, { sourceMarkdownFile: 'README.md' });
 
 	const sources = [
-		[ 'readme/changelog.md', 'docs/changelog/index.html', { title: 'Changelog (Desktop App)' } ],
-		[ 'readme/changelog_cli.md', 'docs/changelog_cli/index.html', { title: 'Changelog (CLI App)' } ],
-		[ 'readme/clipper.md', 'docs/clipper/index.html', { title: 'Web Clipper' } ],
-		[ 'readme/debugging.md', 'docs/debugging/index.html', { title: 'Debugging' } ],
-		[ 'readme/desktop.md', 'docs/desktop/index.html', { title: 'Desktop Application' } ],
-		[ 'readme/donate.md', 'docs/donate/index.html', { title: 'Donate' } ],
-		[ 'readme/e2ee.md', 'docs/e2ee/index.html', { title: 'End-To-End Encryption' } ],
-		[ 'readme/faq.md', 'docs/faq/index.html', { title: 'FAQ' } ],
-		[ 'readme/mobile.md', 'docs/mobile/index.html', { title: 'Mobile Application' } ],
-		[ 'readme/spec.md', 'docs/spec/index.html', { title: 'Specifications' } ],
-		[ 'readme/stats.md', 'docs/stats/index.html', { title: 'Statistics' } ],
-		[ 'readme/terminal.md', 'docs/terminal/index.html', { title: 'Terminal Application' } ],
-		[ 'readme/api.md', 'docs/api/index.html', { title: 'REST API' } ],
-		[ 'readme/prereleases.md', 'docs/prereleases/index.html', { title: 'Pre-releases' } ],
-		[ 'readme/markdown.md', 'docs/markdown/index.html', { title: 'Markdown Guide' } ],
+		['readme/changelog.md', 'docs/changelog/index.html', { title: 'Changelog (Desktop App)' }],
+		['readme/changelog_cli.md', 'docs/changelog_cli/index.html', { title: 'Changelog (CLI App)' }],
+		['readme/clipper.md', 'docs/clipper/index.html', { title: 'Web Clipper' }],
+		['readme/debugging.md', 'docs/debugging/index.html', { title: 'Debugging' }],
+		['readme/desktop.md', 'docs/desktop/index.html', { title: 'Desktop Application' }],
+		['readme/donate.md', 'docs/donate/index.html', { title: 'Donate' }],
+		['readme/e2ee.md', 'docs/e2ee/index.html', { title: 'End-To-End Encryption' }],
+		['readme/faq.md', 'docs/faq/index.html', { title: 'FAQ' }],
+		['readme/mobile.md', 'docs/mobile/index.html', { title: 'Mobile Application' }],
+		['readme/spec.md', 'docs/spec/index.html', { title: 'Specifications' }],
+		['readme/stats.md', 'docs/stats/index.html', { title: 'Statistics' }],
+		['readme/terminal.md', 'docs/terminal/index.html', { title: 'Terminal Application' }],
+		['readme/api.md', 'docs/api/index.html', { title: 'REST API' }],
+		['readme/prereleases.md', 'docs/prereleases/index.html', { title: 'Pre-releases' }],
+		['readme/markdown.md', 'docs/markdown/index.html', { title: 'Markdown Guide' }],
+		['readme/nextcloud_app.md', 'docs/nextcloud_app/index.html', { title: 'Joplin Web API for Nextcloud' }],
 
-		[ 'readme/gsoc/index.md', 'docs/gsoc/index.html', { title: 'Google Summer of Code' } ],
-		[ 'readme/gsoc/idea1_nextcloud.md', 'docs/gsoc/idea1_nextcloud.html', { title: 'GSoC: Idea 1: Nextcloud' } ],
-		[ 'readme/gsoc/idea2_sharing.md', 'docs/gsoc/idea2_sharing.html', { title: 'GSoC: Idea 2: Sharing' } ],
-		[ 'readme/gsoc/idea3_tagging.md', 'docs/gsoc/idea3_tagging.html', { title: 'GSoC: Idea 3: Tagging' } ],
-		[ 'readme/gsoc/idea4_search.md', 'docs/gsoc/idea4_search.html', { title: 'GSoC: Idea 4: Search' } ],
-		[ 'readme/gsoc/idea5_password_per_note.md', 'docs/gsoc/idea5_password_per_note.html', { title: 'GSoC: Idea 5: Password per Note' } ],
+		['readme/gsoc2020/index.md', 'docs/gsoc2020/index.html', { title: 'Google Summer of Code' }],
+		['readme/gsoc2020/ideas.md', 'docs/gsoc2020/ideas/index.html', { title: 'GSoC: Project Ideas' }],
+
+		['readme/gsod2020/index.md', 'docs/gsod2020/index.html', { title: 'Google Season of Docs' }],
+		['readme/gsod2020/ideas.md', 'docs/gsod2020/ideas/index.html', { title: 'Google Season of Docs: Project Ideas' }],
 	];
 
 	const path = require('path');

@@ -6,6 +6,11 @@ module.exports = {
 	},
 	"parser": "@typescript-eslint/parser",
 	'extends': ['eslint:recommended'],
+	"settings": {
+		'react': {
+			'version': '16.12',
+		},
+	},
 	'globals': {
 		'Atomics': 'readonly',
 		'SharedArrayBuffer': 'readonly',
@@ -14,7 +19,10 @@ module.exports = {
 		'expect': 'readonly',
 		'describe': 'readonly',
 		'it': 'readonly',
+		'beforeAll': 'readonly',
+		'afterAll': 'readonly',
 		'beforeEach': 'readonly',
+		'afterEach': 'readonly',
 		'jasmine': 'readonly',
 
 		// React Native variables
@@ -24,6 +32,8 @@ module.exports = {
 		'browserSupportsPromises_': true,
 		'chrome': 'readonly',
 		'browser': 'readonly',
+
+		'tinymce': 'readonly',
 	},
 	'parserOptions': {
 		'ecmaVersion': 2018,
@@ -39,17 +49,27 @@ module.exports = {
 		"react/jsx-uses-react": "error",
 		"react/jsx-uses-vars": "error",
 		"no-unused-vars": "error",
+		"@typescript-eslint/no-unused-vars": "error",
 		"no-constant-condition": 0,
 		"no-prototype-builtins": 0,
 		// This error is always a false positive so far since it detects
 		// possible race conditions in contexts where we know it cannot happen.
 		"require-atomic-updates": 0,
-		// "no-lonely-if": "error",
+		"prefer-const": ["error"],
+		"no-var": ["error"],
+
+		// Checks rules of Hooks
+		"react-hooks/rules-of-hooks": "error",
+		// Checks effect dependencies
+		// Disable because of this: https://github.com/facebook/react/issues/16265
+		// "react-hooks/exhaustive-deps": "warn",
 
 		// -------------------------------
 		// Formatting
 		// -------------------------------
 		"space-in-parens": ["error", "never"],
+		"space-infix-ops": ["error"],
+		"curly": ["error", "multi-line", "consistent"],
 		"semi": ["error", "always"],
 		"eol-last": ["error", "always"],
 		"quotes": ["error", "single"],
@@ -59,6 +79,8 @@ module.exports = {
 		"linebreak-style": ["error", "unix"],
 		"prefer-template": ["error"],
 		"template-curly-spacing": ["error", "never"],
+		"object-curly-spacing": ["error", "always"],
+		"array-bracket-spacing": ["error", "never"],
 		"key-spacing": ["error", {
 			"beforeColon": false,
 			"afterColon": true,
@@ -76,10 +98,11 @@ module.exports = {
 		"multiline-comment-style": ["error", "separate-lines"],
 		"space-before-blocks": "error",
 		"spaced-comment": ["error", "always"],
-		"keyword-spacing": ["error", { "before": true, "after": true }]
+		"keyword-spacing": ["error", { "before": true, "after": true }],
 	},
 	"plugins": [
 		"react",
 		"@typescript-eslint",
+		"react-hooks"
 	],
 };
