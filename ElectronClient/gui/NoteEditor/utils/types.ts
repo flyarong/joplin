@@ -1,7 +1,7 @@
 // eslint-disable-next-line no-unused-vars
 import AsyncActionQueue from '../../../lib/AsyncActionQueue';
 
-export interface NoteTextProps {
+export interface NoteEditorProps {
 	style: any;
 	noteId: string;
 	theme: number;
@@ -16,7 +16,6 @@ export interface NoteTextProps {
 	windowCommand: any;
 	folders: any[];
 	notesParentType: string;
-	historyNotes: any[];
 	selectedNoteTags: any[];
 	lastEditorScrollPercents: any;
 	selectedNoteHash: string;
@@ -41,7 +40,6 @@ export interface NoteBodyEditorProps {
 	markupToHtml: Function;
 	htmlToMarkdown: Function;
 	allAssets: Function;
-	attachResources: Function;
 	disabled: boolean;
 	dispatch: Function;
 	noteToolbar: any;
@@ -49,6 +47,8 @@ export interface NoteBodyEditorProps {
 	visiblePanes: string[],
 	keyboardMode: string,
 	resourceInfos: ResourceInfos,
+	locale: string,
+	onDrop: Function,
 }
 
 export interface FormNote {

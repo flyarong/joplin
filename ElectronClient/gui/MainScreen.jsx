@@ -139,11 +139,15 @@ class MainScreenComponent extends React.Component {
 
 			const body = template ? TemplateUtils.render(template) : '';
 
-			const newNote = await Note.save({
+			const defaultValues = Note.previewFieldsWithDefaultValues({ includeTimestamps: false });
+
+			let newNote = Object.assign({}, defaultValues, {
 				parent_id: folderId,
 				is_todo: isTodo ? 1 : 0,
 				body: body,
-			}, { provisional: true });
+			});
+
+			newNote = await Note.save(newNote, { provisional: true });
 
 			this.props.dispatch({
 				type: 'NOTE_SELECT',
@@ -248,6 +252,7 @@ class MainScreenComponent extends React.Component {
 				},
 			});
 		} else if (command.name === 'moveToFolder') {
+			const folders = await Folder.sortFolderTree();
 			const startFolders = [];
 			const maxDepth = 15;
 
@@ -258,7 +263,8 @@ class MainScreenComponent extends React.Component {
 					if (folder.children) addOptions(folder.children, (depth + 1) < maxDepth ? depth + 1 : maxDepth);
 				}
 			};
-			addOptions(await Folder.allAsTree(), 0);
+
+			addOptions(folders, 0);
 
 			this.setState({
 				promptOptions: {
@@ -535,7 +541,7 @@ class MainScreenComponent extends React.Component {
 			if (noteIds.length === 1) {
 				path = bridge().showSaveDialog({
 					filters: [{ name: _('PDF File'), extensions: ['pdf'] }],
-					defaultPath: await InteropServiceHelper.defaultFilename(noteIds, 'pdf'),
+					defaultPath: await InteropServiceHelper.defaultFilename(noteIds[0], 'pdf'),
 				});
 
 			} else {
@@ -548,14 +554,20 @@ class MainScreenComponent extends React.Component {
 
 			for (let i = 0; i < noteIds.length; i++) {
 				const note = await Note.load(noteIds[i]);
-				const folder = Folder.byId(this.props.folders, note.parent_id);
 
-				const pdfPath = (noteIds.length === 1) ? path :
-					await shim.fsDriver().findUniqueFilename(`${path}/${this.pdfFileName_(note, folder)}`);
+				let pdfPath = '';
+
+				if (noteIds.length === 1) {
+					pdfPath = path;
+				} else {
+					const n = await InteropServiceHelper.defaultFilename(note.id, 'pdf');
+					pdfPath = await shim.fsDriver().findUniqueFilename(`${path}/${n}`);
+				}
 
 				await this.printTo_('pdf', { path: pdfPath, noteId: note.id });
 			}
 		} catch (error) {
+			console.error(error);
 			bridge().showErrorMessageBox(error.message);
 		}
 	}
@@ -597,7 +609,7 @@ class MainScreenComponent extends React.Component {
 
 		const rowHeight = height - theme.headerHeight - (messageBoxVisible ? this.styles_.messageBox.height : 0);
 
-		this.styles_.verticalResizer = {
+		this.styles_.verticalResizerSidebar = {
 			width: 5,
 			// HACK: For unknown reasons, the resizers are just a little bit taller than the other elements,
 			// making the whole window scroll vertically. So we remove 10 extra pixels here.
@@ -605,8 +617,10 @@ class MainScreenComponent extends React.Component {
 			display: 'inline-block',
 		};
 
+		this.styles_.verticalResizerNotelist = Object.assign({}, this.styles_.verticalResizerSidebar);
+
 		this.styles_.sideBar = {
-			width: sidebarWidth - this.styles_.verticalResizer.width,
+			width: sidebarWidth - this.styles_.verticalResizerSidebar.width,
 			height: rowHeight,
 			display: 'inline-block',
 			verticalAlign: 'top',
@@ -615,10 +629,11 @@ class MainScreenComponent extends React.Component {
 		if (isSidebarVisible === false) {
 			this.styles_.sideBar.width = 0;
 			this.styles_.sideBar.display = 'none';
+			this.styles_.verticalResizerSidebar.display = 'none';
 		}
 
 		this.styles_.noteList = {
-			width: noteListWidth - this.styles_.verticalResizer.width,
+			width: noteListWidth - this.styles_.verticalResizerNotelist.width,
 			height: rowHeight,
 			display: 'inline-block',
 			verticalAlign: 'top',
@@ -627,7 +642,7 @@ class MainScreenComponent extends React.Component {
 		if (isNoteListVisible === false) {
 			this.styles_.noteList.width = 0;
 			this.styles_.noteList.display = 'none';
-			this.styles_.verticalResizer.display = 'none';
+			this.styles_.verticalResizerNotelist.display = 'none';
 		}
 
 		this.styles_.noteText = {
@@ -742,7 +757,7 @@ class MainScreenComponent extends React.Component {
 				color: theme.color,
 				backgroundColor: theme.backgroundColor,
 			},
-			this.props.style
+			this.props.style,
 		);
 		const promptOptions = this.state.promptOptions;
 		const folders = this.props.folders;
@@ -774,7 +789,7 @@ class MainScreenComponent extends React.Component {
 
 		headerItems.push({
 			title: _('New note'),
-			iconName: 'fa-file-o',
+			iconName: 'fa-file',
 			enabled: !!folders.length && !onConflictFolder,
 			onClick: () => {
 				this.doCommand({ name: 'newNote' });
@@ -783,7 +798,7 @@ class MainScreenComponent extends React.Component {
 
 		headerItems.push({
 			title: _('New to-do'),
-			iconName: 'fa-check-square-o',
+			iconName: 'fa-check-square',
 			enabled: !!folders.length && !onConflictFolder,
 			onClick: () => {
 				this.doCommand({ name: 'newTodo' });
@@ -800,7 +815,7 @@ class MainScreenComponent extends React.Component {
 
 		headerItems.push({
 			title: _('Code View'),
-			iconName: 'fa-file-code-o ',
+			iconName: 'fa-file-code ',
 			enabled: !!notes.length,
 			type: 'checkbox',
 			checked: this.props.settingEditorCodeView,
@@ -852,7 +867,6 @@ class MainScreenComponent extends React.Component {
 		const shareNoteDialogOptions = this.state.shareNoteDialogOptions;
 
 		const bodyEditor = this.props.settingEditorCodeView ? 'AceEditor' : 'TinyMCE';
-		const noteTextComp = <NoteEditor bodyEditor={bodyEditor} style={styles.noteText} />;
 
 		return (
 			<div style={style}>
@@ -867,10 +881,10 @@ class MainScreenComponent extends React.Component {
 				<Header style={styles.header} showBackButton={false} items={headerItems} />
 				{messageComp}
 				<SideBar style={styles.sideBar} />
-				<VerticalResizer style={styles.verticalResizer} onDrag={this.sidebar_onDrag} />
+				<VerticalResizer style={styles.verticalResizerSidebar} onDrag={this.sidebar_onDrag} />
 				<NoteList style={styles.noteList} />
-				<VerticalResizer style={styles.verticalResizer} onDrag={this.noteList_onDrag} />
-				{noteTextComp}
+				<VerticalResizer style={styles.verticalResizerNotelist} onDrag={this.noteList_onDrag} />
+				<NoteEditor bodyEditor={bodyEditor} style={styles.noteText} />
 				{pluginDialog}
 			</div>
 		);

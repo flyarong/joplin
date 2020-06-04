@@ -6,6 +6,7 @@ const Setting = require('lib/models/Setting.js');
 const { shim } = require('lib/shim.js');
 const MasterKey = require('lib/models/MasterKey');
 const Note = require('lib/models/Note');
+const Folder = require('lib/models/Folder');
 const { MarkupToHtml } = require('lib/joplin-renderer');
 const { _, setLocale } = require('lib/locale.js');
 const { Logger } = require('lib/logger.js');
@@ -22,6 +23,7 @@ const InteropServiceHelper = require('./InteropServiceHelper.js');
 const ResourceService = require('lib/services/ResourceService');
 const ClipperServer = require('lib/ClipperServer');
 const ExternalEditWatcher = require('lib/services/ExternalEditWatcher');
+const ResourceEditWatcher = require('lib/services/ResourceEditWatcher').default;
 const { bridge } = require('electron').remote.require('./bridge');
 const { shell, webFrame, clipboard } = require('electron');
 const Menu = bridge().Menu;
@@ -58,6 +60,8 @@ class Application extends BaseApplication {
 	constructor() {
 		super();
 		this.lastMenuScreen_ = null;
+
+		this.bridge_nativeThemeUpdated = this.bridge_nativeThemeUpdated.bind(this);
 	}
 
 	hasGui() {
@@ -248,6 +252,8 @@ class Application extends BaseApplication {
 	}
 
 	async generalMiddleware(store, next, action) {
+		let mustUpdateMenuItemStates = false;
+
 		if (action.type == 'SETTING_UPDATE_ONE' && action.key == 'locale' || action.type == 'SETTING_UPDATE_ALL') {
 			setLocale(Setting.value('locale'));
 			// The bridge runs within the main process, with its own instance of locale.js
@@ -266,6 +272,10 @@ class Application extends BaseApplication {
 
 		if (action.type == 'SETTING_UPDATE_ONE' && action.key == 'windowContentZoomFactor' || action.type == 'SETTING_UPDATE_ALL') {
 			webFrame.setZoomFactor(Setting.value('windowContentZoomFactor') / 100);
+		}
+
+		if (action.type == 'SETTING_UPDATE_ONE' && ['editor.codeView'].includes(action.key) || action.type == 'SETTING_UPDATE_ALL') {
+			mustUpdateMenuItemStates = true;
 		}
 
 		if (['EVENT_NOTE_ALARM_FIELD_CHANGE', 'NOTE_DELETE'].indexOf(action.type) >= 0) {
@@ -291,16 +301,36 @@ class Application extends BaseApplication {
 			Setting.setValue('noteListVisibility', newState.noteListVisibility);
 		}
 
-		if (action.type.indexOf('NOTE_SELECT') === 0 || action.type.indexOf('FOLDER_SELECT') === 0) {
-			this.updateMenuItemStates(newState);
+		if (action.type.indexOf('NOTE_SELECT') === 0 || action.type.indexOf('FOLDER_SELECT') === 0 || action.type === 'NOTE_VISIBLE_PANES_TOGGLE') {
+			mustUpdateMenuItemStates = true;
 		}
 
 		if (['NOTE_DEVTOOLS_TOGGLE', 'NOTE_DEVTOOLS_SET'].indexOf(action.type) >= 0) {
 			this.toggleDevTools(newState.devToolsVisible);
-			this.updateMenuItemStates(newState);
+			mustUpdateMenuItemStates = true;
 		}
 
+		if (action.type === 'FOLDER_AND_NOTE_SELECT') {
+			await Folder.expandTree(newState.folders, action.folderId);
+		}
+
+		if (this.hasGui() && ((action.type == 'SETTING_UPDATE_ONE' && ['themeAutoDetect', 'theme', 'preferredLightTheme', 'preferredDarkTheme'].includes(action.key)) || action.type == 'SETTING_UPDATE_ALL')) {
+			this.handleThemeAutoDetect();
+		}
+
+		if (mustUpdateMenuItemStates) this.updateMenuItemStates(newState);
+
 		return result;
+	}
+
+	handleThemeAutoDetect() {
+		if (!Setting.value('themeAutoDetect')) return;
+
+		if (bridge().shouldUseDarkColors()) {
+			Setting.setValue('theme', Setting.value('preferredDarkTheme'));
+		} else {
+			Setting.setValue('theme', Setting.value('preferredLightTheme'));
+		}
 	}
 
 	async refreshMenu() {
@@ -340,6 +370,7 @@ class Application extends BaseApplication {
 			sortItems.push({ type: 'separator' });
 
 			sortItems.push({
+				id: `sort:${type}:reverse`,
 				label: Setting.settingMetadata(`${type}.sortOrder.reverse`).label(),
 				type: 'checkbox',
 				checked: Setting.value(`${type}.sortOrder.reverse`),
@@ -655,6 +686,7 @@ class Application extends BaseApplication {
 				_('Client ID: %s', Setting.value('clientId')),
 				_('Sync Version: %s', Setting.value('syncVersion')),
 				_('Profile Version: %s', reg.db().version()),
+				_('Keychain Supported: %s', Setting.value('keychain.supported') >= 1 ? _('Yes') : _('No')),
 			];
 			if (gitInfo) {
 				message.push(`\n${gitInfo}`);
@@ -1058,12 +1090,12 @@ class Application extends BaseApplication {
 					type: 'separator',
 					screens: ['Main'],
 				}, {
+					id: 'note:statistics',
 					label: _('Statistics...'),
 					click: () => {
 						this.dispatch({
 							type: 'WINDOW_COMMAND',
 							name: 'commandContentProperties',
-							// text: this.state.note.body,
 						});
 					},
 				}],
@@ -1074,6 +1106,7 @@ class Application extends BaseApplication {
 			},
 			help: {
 				label: _('&Help'),
+				role: 'help', // Makes it add the "Search" field on macOS
 				submenu: [{
 					label: _('Website and documentation'),
 					accelerator: 'F1',
@@ -1209,15 +1242,51 @@ class Application extends BaseApplication {
 
 		const selectedNoteIds = state.selectedNoteIds;
 		const note = selectedNoteIds.length === 1 ? await Note.load(selectedNoteIds[0]) : null;
+		const aceEditorViewerOnly = state.settings['editor.codeView'] && state.noteVisiblePanes.length === 1 && state.noteVisiblePanes[0] === 'viewer';
 
-		for (const itemId of ['copy', 'paste', 'cut', 'selectAll', 'bold', 'italic', 'link', 'code', 'insertDateTime', 'commandStartExternalEditing', 'showLocalSearch']) {
-			const menuItem = Menu.getApplicationMenu().getMenuItemById(`edit:${itemId}`);
+		// Only enabled when there's only one active note, and that note
+		// is a Markdown note (markup_language = MARKDOWN), and the
+		// editor is in edit mode (not viewer-only mode).
+		const singleMarkdownNoteMenuItems = [
+			'edit:bold',
+			'edit:italic',
+			'edit:link',
+			'edit:code',
+			'edit:insertDateTime',
+		];
+
+		// Only enabled when there's only one active note.
+		const singleNoteMenuItems = [
+			'edit:copy',
+			'edit:paste',
+			'edit:cut',
+			'edit:selectAll',
+			'edit:showLocalSearch',
+			'edit:commandStartExternalEditing',
+			'note:statistics',
+		];
+
+		for (const itemId of singleMarkdownNoteMenuItems) {
+			const menuItem = Menu.getApplicationMenu().getMenuItemById(itemId);
 			if (!menuItem) continue;
-			menuItem.enabled = !!note && note.markup_language === MarkupToHtml.MARKUP_LANGUAGE_MARKDOWN;
+			menuItem.enabled = !aceEditorViewerOnly && !!note && note.markup_language === MarkupToHtml.MARKUP_LANGUAGE_MARKDOWN;
 		}
+
+		for (const itemId of singleNoteMenuItems) {
+			const menuItem = Menu.getApplicationMenu().getMenuItemById(itemId);
+			if (!menuItem) continue;
+			menuItem.enabled = selectedNoteIds.length === 1;
+		}
+
+		const sortNoteReverseItem = Menu.getApplicationMenu().getMenuItemById('sort:notes:reverse');
+		sortNoteReverseItem.enabled = state.settings['notes.sortOrder.field'] !== 'order';
 
 		const menuItem = Menu.getApplicationMenu().getMenuItemById('help:toggleDevTools');
 		menuItem.checked = state.devToolsVisible;
+	}
+
+	bridge_nativeThemeUpdated() {
+		this.handleThemeAutoDetect();
 	}
 
 	updateTray() {
@@ -1438,6 +1507,8 @@ class Application extends BaseApplication {
 		ExternalEditWatcher.instance().setLogger(reg.logger());
 		ExternalEditWatcher.instance().dispatch = this.store().dispatch;
 
+		ResourceEditWatcher.instance().initialize(reg.logger(), this.store().dispatch);
+
 		RevisionService.instance().runInBackground();
 
 		this.updateMenuItemStates();
@@ -1446,6 +1517,8 @@ class Application extends BaseApplication {
 		window.revisionService = RevisionService.instance();
 		window.migrationService = MigrationService.instance();
 		window.decryptionWorker = DecryptionWorker.instance();
+
+		bridge().addEventListener('nativeThemeUpdated', this.bridge_nativeThemeUpdated);
 	}
 
 }

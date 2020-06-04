@@ -15,8 +15,7 @@ import useDropHandler from './utils/useDropHandler';
 import useMarkupToHtml from './utils/useMarkupToHtml';
 import useFormNote, { OnLoadEvent } from './utils/useFormNote';
 import styles_ from './styles';
-import { NoteTextProps, FormNote, ScrollOptions, ScrollOptionTypes, OnChangeEvent, NoteBodyEditorProps } from './utils/types';
-import { attachResources } from './utils/resourceHandling';
+import { NoteEditorProps, FormNote, ScrollOptions, ScrollOptionTypes, OnChangeEvent, NoteBodyEditorProps } from './utils/types';
 
 const { themeStyle } = require('../../theme.js');
 const NoteSearchBar = require('../NoteSearchBar.min.js');
@@ -29,11 +28,12 @@ const { _ } = require('lib/locale');
 const Note = require('lib/models/Note.js');
 const { bridge } = require('electron').remote.require('./bridge');
 const ExternalEditWatcher = require('lib/services/ExternalEditWatcher');
+import ResourceEditWatcher from '../../lib/services/ResourceEditWatcher';
 const eventManager = require('../../eventManager');
 const NoteRevisionViewer = require('../NoteRevisionViewer.min');
 const TagList = require('../TagList.min.js');
 
-function NoteEditor(props: NoteTextProps) {
+function NoteEditor(props: NoteEditorProps) {
 	const [showRevisions, setShowRevisions] = useState(false);
 	const [titleHasBeenManuallyChanged, setTitleHasBeenManuallyChanged] = useState(false);
 	const [scrollWhenReady, setScrollWhenReady] = useState<ScrollOptions>(null);
@@ -86,7 +86,7 @@ function NoteEditor(props: NoteTextProps) {
 	function scheduleSaveNote(formNote: FormNote) {
 		if (!formNote.saveActionQueue) throw new Error('saveActionQueue is not set!!'); // Sanity check
 
-		reg.logger().debug('Scheduling...', formNote);
+		// reg.logger().debug('Scheduling...', formNote);
 
 		const makeAction = (formNote: FormNote) => {
 			return async function() {
@@ -173,6 +173,8 @@ function NoteEditor(props: NoteTextProps) {
 			type: props.selectedNoteHash ? ScrollOptionTypes.Hash : ScrollOptionTypes.Percent,
 			value: props.selectedNoteHash ? props.selectedNoteHash : props.lastEditorScrollPercents[props.noteId] || 0,
 		});
+
+		ResourceEditWatcher.instance().stopWatchingAll();
 	}, [formNote.id, previousNoteId]);
 
 	const onFieldChange = useCallback((field: string, value: any, changeId = 0) => {
@@ -268,7 +270,7 @@ function NoteEditor(props: NoteTextProps) {
 		});
 	}, [formNote, handleProvisionalFlag]);
 
-	const onMessage = useMessageHandler(scrollWhenReady, setScrollWhenReady, editorRef, setLocalSearchResultCount, props.dispatch);
+	const onMessage = useMessageHandler(scrollWhenReady, setScrollWhenReady, editorRef, setLocalSearchResultCount, props.dispatch, formNote);
 
 	const introductionPostLinkClick = useCallback(() => {
 		bridge().openExternal('https://www.patreon.com/posts/34246624');
@@ -379,19 +381,37 @@ function NoteEditor(props: NoteTextProps) {
 
 	function renderNoteToolbar() {
 		const toolbarStyle = {
-			// marginTop: 4,
 			marginBottom: 0,
-			flex: 1,
 		};
 
 		return <NoteToolbar
 			theme={props.theme}
 			note={formNote}
-			dispatch={props.dispatch}
 			style={toolbarStyle}
-			watchedNoteFiles={props.watchedNoteFiles}
 			onButtonClick={noteToolbar_buttonClick}
 		/>;
+	}
+
+	function renderTagBar() {
+		return props.selectedNoteTags.length ? <TagList items={props.selectedNoteTags} /> : null;
+	}
+
+	function renderTitleBar() {
+		const titleBarDate = <span style={styles.titleDate}>{time.formatMsToLocal(formNote.user_updated_time)}</span>;
+		return (
+			<div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center' }}>
+				<input
+					type="text"
+					ref={titleInputRef}
+					placeholder={props.isProvisional ? _('Creating new %s...', formNote.is_todo ? _('to-do') : _('note')) : ''}
+					style={styles.titleInput}
+					onChange={onTitleChange}
+					onKeyDown={onTitleKeydown}
+					value={formNote.title}
+				/>
+				{titleBarDate}
+			</div>
+		);
 	}
 
 	const searchMarkers = useSearchMarkers(showLocalSearch, localSearchMarkerOptions, props.searches, props.selectedSearchId);
@@ -410,15 +430,16 @@ function NoteEditor(props: NoteTextProps) {
 		htmlToMarkdown: htmlToMarkdown,
 		markupToHtml: markupToHtml,
 		allAssets: allAssets,
-		attachResources: attachResources,
 		disabled: false,
 		theme: props.theme,
 		dispatch: props.dispatch,
-		noteToolbar: renderNoteToolbar(),
+		noteToolbar: null,// renderNoteToolbar(),
 		onScroll: onScroll,
 		searchMarkers: searchMarkers,
 		visiblePanes: props.noteVisiblePanes || ['editor', 'viewer'],
 		keyboardMode: Setting.value('editor.keyboardMode'),
+		locale: Setting.value('locale'),
+		onDrop: onDrop,
 	};
 
 	let editor = null;
@@ -432,20 +453,14 @@ function NoteEditor(props: NoteTextProps) {
 	}
 
 	const wysiwygBanner = props.bodyEditor !== 'TinyMCE' ? null : (
-		<div style={{ ...styles.warningBanner, marginBottom: 10 }}>
-			This is an experimental WYSIWYG editor for evaluation only. Please do not use with important notes as you may lose some data! See the <a style={styles.urlColor} onClick={introductionPostLinkClick} href="#">introduction post</a> for more information.
+		<div style={{ ...styles.warningBanner }}>
+			This is an experimental WYSIWYG editor for evaluation only. Please do not use with important notes as you may lose some data! See the <a style={styles.urlColor} onClick={introductionPostLinkClick} href="#">introduction post</a> for more information. TO SWITCH TO THE MARKDOWN EDITOR PLEASE PRESS "Code View".
 		</div>
 	);
 
 	const noteRevisionViewer_onBack = useCallback(() => {
 		setShowRevisions(false);
 	}, []);
-
-	const tagStyle = {
-		marginBottom: 10,
-	};
-
-	const tagList = props.selectedNoteTags.length ? <TagList style={tagStyle} items={props.selectedNoteTags} /> : null;
 
 	if (showRevisions) {
 		const theme = themeStyle(props.theme);
@@ -477,8 +492,6 @@ function NoteEditor(props: NoteTextProps) {
 		/>;
 	}
 
-	const titleBarDate = <span style={styles.titleDate}>{time.formatMsToLocal(formNote.user_updated_time)}</span>;
-
 	function renderSearchBar() {
 		if (!showLocalSearch) return false;
 
@@ -504,27 +517,16 @@ function NoteEditor(props: NoteTextProps) {
 		);
 	}
 
-	if (formNote.encryption_applied || !formNote.id) {
+	if (formNote.encryption_applied || !formNote.id || !props.noteId) {
 		return renderNoNotes(styles.root);
 	}
 
 	return (
 		<div style={styles.root} onDrop={onDrop}>
 			<div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-				{wysiwygBanner}
-				{tagList}
+				{renderTitleBar()}
 				<div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center' }}>
-					<input
-						type="text"
-						ref={titleInputRef}
-						// disabled={waitingToSaveNote}
-						placeholder={props.isProvisional ? _('Creating new %s...', formNote.is_todo ? _('to-do') : _('note')) : ''}
-						style={styles.titleInput}
-						onChange={onTitleChange}
-						onKeyDown={onTitleKeydown}
-						value={formNote.title}
-					/>
-					{titleBarDate}
+					{renderNoteToolbar()}{renderTagBar()}
 				</div>
 				<div style={{ display: 'flex', flex: 1 }}>
 					{editor}
@@ -532,6 +534,7 @@ function NoteEditor(props: NoteTextProps) {
 				<div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center' }}>
 					{renderSearchBar()}
 				</div>
+				{wysiwygBanner}
 			</div>
 		</div>
 	);
@@ -556,7 +559,6 @@ const mapStateToProps = (state: any) => {
 		watchedNoteFiles: state.watchedNoteFiles,
 		windowCommand: state.windowCommand,
 		notesParentType: state.notesParentType,
-		historyNotes: state.historyNotes,
 		selectedNoteTags: state.selectedNoteTags,
 		lastEditorScrollPercents: state.lastEditorScrollPercents,
 		selectedNoteHash: state.selectedNoteHash,
