@@ -39,7 +39,7 @@ class ScreenHeaderComponent extends React.PureComponent {
 		const styleObject = {
 			container: {
 				flexDirection: 'column',
-				backgroundColor: theme.raisedBackgroundColor,
+				backgroundColor: theme.backgroundColor2,
 				alignItems: 'center',
 				shadowColor: '#000000',
 				elevation: 5,
@@ -52,7 +52,7 @@ class ScreenHeaderComponent extends React.PureComponent {
 			sideMenuButton: {
 				flex: 1,
 				alignItems: 'center',
-				backgroundColor: theme.raisedBackgroundColor,
+				backgroundColor: theme.backgroundColor2,
 				paddingLeft: theme.marginLeft,
 				paddingRight: 5,
 				marginRight: 2,
@@ -61,9 +61,9 @@ class ScreenHeaderComponent extends React.PureComponent {
 			},
 			iconButton: {
 				flex: 1,
-				backgroundColor: theme.raisedBackgroundColor,
-				paddingLeft: 15,
-				paddingRight: 15,
+				backgroundColor: theme.backgroundColor2,
+				paddingLeft: 10,
+				paddingRight: 10,
 				paddingTop: PADDING_V,
 				paddingBottom: PADDING_V,
 			},
@@ -73,18 +73,18 @@ class ScreenHeaderComponent extends React.PureComponent {
 				alignItems: 'center',
 				padding: 10,
 				borderWidth: 1,
-				borderColor: theme.raisedHighlightedColor,
+				borderColor: theme.colorBright2,
 				borderRadius: 4,
 				marginRight: 8,
 			},
 			saveButtonText: {
 				textAlignVertical: 'center',
-				color: theme.raisedHighlightedColor,
+				color: theme.colorBright2,
 				fontWeight: 'bold',
 			},
 			savedButtonIcon: {
 				fontSize: 20,
-				color: theme.raisedHighlightedColor,
+				color: theme.colorBright2,
 				width: 18,
 				height: 18,
 			},
@@ -96,11 +96,11 @@ class ScreenHeaderComponent extends React.PureComponent {
 				fontSize: 30,
 				paddingLeft: 10,
 				paddingRight: theme.marginRight,
-				color: theme.raisedColor,
+				color: theme.color2,
 				fontWeight: 'bold',
 			},
 			contextMenu: {
-				backgroundColor: theme.raisedBackgroundColor,
+				backgroundColor: theme.backgroundColor2,
 			},
 			contextMenuItem: {
 				backgroundColor: theme.backgroundColor,
@@ -120,7 +120,7 @@ class ScreenHeaderComponent extends React.PureComponent {
 				flex: 1,
 				textAlignVertical: 'center',
 				marginLeft: 10,
-				color: theme.raisedHighlightedColor,
+				color: theme.colorBright2,
 				fontWeight: 'bold',
 				fontSize: theme.fontSize,
 				paddingTop: 15,
@@ -136,7 +136,7 @@ class ScreenHeaderComponent extends React.PureComponent {
 		styleObject.topIcon = Object.assign({}, theme.icon);
 		styleObject.topIcon.flex = 1;
 		styleObject.topIcon.textAlignVertical = 'center';
-		styleObject.topIcon.color = theme.raisedColor;
+		styleObject.topIcon.color = theme.colorBright2;
 
 		styleObject.backButton = Object.assign({}, styleObject.iconButton);
 		styleObject.backButton.marginRight = 1;
@@ -248,6 +248,36 @@ class ScreenHeaderComponent extends React.PureComponent {
 				</TouchableOpacity>
 			);
 		}
+
+		const renderTopButton = (options) => {
+			if (!options.visible) return null;
+
+			const icon = <Icon name={options.iconName} style={this.styles().topIcon} />;
+			const viewStyle = options.disabled ? this.styles().iconButtonDisabled : this.styles().iconButton;
+
+			return (
+				<TouchableOpacity onPress={options.onPress} style={{ padding: 0 }} disabled={!!options.disabled}>
+					<View style={viewStyle}>{icon}</View>
+				</TouchableOpacity>
+			);
+		};
+
+		const renderUndoButton = () => {
+			return renderTopButton({
+				iconName: 'md-undo',
+				onPress: this.props.onUndoButtonPress,
+				visible: this.props.showUndoButton,
+				disabled: this.props.undoButtonDisabled,
+			});
+		};
+
+		const renderRedoButton = () => {
+			return renderTopButton({
+				iconName: 'md-redo',
+				onPress: this.props.onRedoButtonPress,
+				visible: this.props.showRedoButton,
+			});
+		};
 
 		function selectAllButton(styles, onPress) {
 			return (
@@ -376,7 +406,7 @@ class ScreenHeaderComponent extends React.PureComponent {
 							backgroundColor: theme.backgroundColor,
 						}}
 						headerStyle={{
-							color: theme.raisedHighlightedColor,
+							color: theme.colorBright2,
 							fontSize: theme.fontSize,
 							opacity: disabled ? theme.disabledOpacity : 1,
 						}}
@@ -420,6 +450,7 @@ class ScreenHeaderComponent extends React.PureComponent {
 
 		if (this.props.showMissingMasterKeyMessage) warningComps.push(this.renderWarningBox('EncryptionConfig', _('Press to set the decryption password.')));
 		if (this.props.hasDisabledSyncItems) warningComps.push(this.renderWarningBox('Status', _('Some items cannot be synchronised. Press for more info.')));
+		if (this.props.shouldUpgradeSyncTarget && this.props.showShouldUpgradeSyncTargetMessage !== false) warningComps.push(this.renderWarningBox('UpgradeSyncTarget', _('The sync target needs to be upgraded. Press this banner to proceed.')));
 
 		const showSideMenuButton = !!this.props.showSideMenuButton && !this.props.noteSelectionEnabled;
 		const showSelectAllButton = this.props.noteSelectionEnabled;
@@ -463,6 +494,8 @@ class ScreenHeaderComponent extends React.PureComponent {
 				<View style={{ flexDirection: 'row', alignItems: 'center' }}>
 					{sideMenuComp}
 					{backButtonComp}
+					{renderUndoButton(this.styles())}
+					{renderRedoButton(this.styles())}
 					{saveButton(
 						this.styles(),
 						() => {
@@ -504,6 +537,7 @@ const ScreenHeader = connect(state => {
 		selectedNoteIds: state.selectedNoteIds,
 		showMissingMasterKeyMessage: state.notLoadedMasterKeys.length && state.masterKeys.length,
 		hasDisabledSyncItems: state.hasDisabledSyncItems,
+		shouldUpgradeSyncTarget: state.settings['sync.upgradeState'] === Setting.SYNC_UPGRADE_STATE_SHOULD_DO,
 	};
 })(ScreenHeaderComponent);
 

@@ -12,6 +12,7 @@ COLOR_RESET=`tput sgr0`
 SILENT=false
 ALLOW_ROOT=false
 SHOW_CHANGELOG=false
+INCLUDE_PRE_RELEASE=false
 
 print() {
     if [[ "${SILENT}" == false ]] ; then
@@ -40,6 +41,7 @@ showHelp() {
     print "\t" "--changelog" "\t" "Show the changelog after installation"
     print "\t" "--force" "\t" "Always download the latest version"
     print "\t" "--silent" "\t" "Don't print any output"
+    print "\t" "--prerelease" "\t" "Check for new Versions including Pre-Releases" 
 
     if [[ ! -z $1 ]]; then
         print "\n" "${COLOR_RED}ERROR: " "$*" "${COLOR_RESET}" "\n"
@@ -67,6 +69,7 @@ while getopts "${optspec}" OPT; do
     silent )       SILENT=true ;;
     force )        FORCE=true ;;
     changelog )    SHOW_CHANGELOG=true ;;
+    prerelease )   INCLUDE_PRE_RELEASE=true ;;
     [^\?]* )       showHelp "Illegal option --${OPT}"; exit 2 ;;
     \? )           showHelp "Illegal option -${OPTARG}"; exit 2 ;;
   esac
@@ -87,7 +90,7 @@ showLogo
 #-----------------------------------------------------
 print "Checking architecture..."
 ## uname actually gives more information than needed, but it contains all architectures (hardware and software)
-ARCHITECTURE=$(uname -a || echo "NO CHECK")
+ARCHITECTURE=$(uname -m -p -i || echo "NO CHECK")
 
 if [[ $ARCHITECTURE = "NO CHECK" ]] ; then
   print "${COLOR_YELLOW}WARNING: Can't get system architecture, skipping check${COLOR_RESET}"
@@ -104,7 +107,11 @@ fi
 #-----------------------------------------------------
 
 # Get the latest version to download
-RELEASE_VERSION=$(wget -qO - "https://api.github.com/repos/laurent22/joplin/releases/latest" | grep -Po '"tag_name": ?"v\K.*?(?=")')
+if [[ "$INCLUDE_PRE_RELEASE" == true ]]; then
+  RELEASE_VERSION=$(wget -qO - "https://api.github.com/repos/laurent22/joplin/releases" | grep -Po '"tag_name": ?"v\K.*?(?=")' | head -1)
+else
+  RELEASE_VERSION=$(wget -qO - "https://api.github.com/repos/laurent22/joplin/releases/latest" | grep -Po '"tag_name": ?"v\K.*?(?=")')
+fi
 
 # Check if it's in the latest version
 if [[ -e ~/.joplin/VERSION ]] && [[ $(< ~/.joplin/VERSION) == "${RELEASE_VERSION}" ]]; then
@@ -169,7 +176,7 @@ then
     mkdir -p ~/.local/share/applications
     echo -e "[Desktop Entry]\nEncoding=UTF-8\nName=Joplin\nComment=Joplin for Desktop\nExec=${HOME}/.joplin/Joplin.AppImage\nIcon=joplin\nStartupWMClass=Joplin\nType=Application\nCategories=Office;\n#${APPIMAGE_VERSION}" >> ~/.local/share/applications/appimagekit-joplin.desktop
     # Update application icons
-    [[ `command -v update-desktop-database` ]] && update-desktop-database ~/.local/share/applications
+    [[ `command -v update-desktop-database` ]] && update-desktop-database ~/.local/share/applications && update-desktop-database ~/.local/share/icons
     print "${COLOR_GREEN}OK${COLOR_RESET}"
 else
     print "${COLOR_RED}NOT DONE, unknown desktop '${DESKTOP}'${COLOR_RESET}"

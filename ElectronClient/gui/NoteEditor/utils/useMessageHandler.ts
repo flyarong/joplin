@@ -1,6 +1,7 @@
 import { useCallback } from 'react';
 import { FormNote } from './types';
 import contextMenu from './contextMenu';
+import ResourceEditWatcher from '../../../lib/services/ResourceEditWatcher/index';
 const BaseItem = require('lib/models/BaseItem');
 const { _ } = require('lib/locale');
 const BaseModel = require('lib/BaseModel.js');
@@ -10,7 +11,6 @@ const { urlDecode } = require('lib/string-utils');
 const urlUtils = require('lib/urlUtils');
 const ResourceFetcher = require('lib/services/ResourceFetcher.js');
 const { reg } = require('lib/registry.js');
-import ResourceEditWatcher from '../../../lib/services/ResourceEditWatcher';
 
 export default function useMessageHandler(scrollWhenReady:any, setScrollWhenReady:Function, editorRef:any, setLocalSearchResultCount:Function, dispatch:Function, formNote:FormNote) {
 	return useCallback(async (event: any) => {
@@ -18,7 +18,7 @@ export default function useMessageHandler(scrollWhenReady:any, setScrollWhenRead
 		const args = event.args;
 		const arg0 = args && args.length >= 1 ? args[0] : null;
 
-		if (msg !== 'percentScroll') console.info(`Got ipc-message: ${msg}`, arg0);
+		// if (msg !== 'percentScroll') console.info(`Got ipc-message: ${msg}`, arg0);
 
 		if (msg.indexOf('error:') === 0) {
 			const s = msg.split(':');
@@ -41,6 +41,8 @@ export default function useMessageHandler(scrollWhenReady:any, setScrollWhenRead
 				itemType: arg0 && arg0.type,
 				resourceId: arg0.resourceId,
 				textToCopy: arg0.textToCopy,
+				htmlToCopy: '',
+				insertContent: () => { console.warn('insertContent() not implemented'); },
 			});
 
 			menu.popup(bridge().window());
